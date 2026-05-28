@@ -1,0 +1,14 @@
+PSST.json
+
+/build/
+/Build/
+/out/
+CMakeCache.txt
+CMakeFiles/
+CMakeSettings.json
+cmake_install.cmake
+
+yt-dlp.exe
+ffmpeg.exe
+ffprobe.exe
+*.dll
