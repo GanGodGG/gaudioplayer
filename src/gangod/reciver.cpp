@@ -14,7 +14,6 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* s) 
 
 void Reciver::init(ReciverConnect service) {
     // Here we can add the code to initialize the reciver, but for now, we'll just print a message.
-    std::cout << "Initializing Reciver..." << std::endl;
     std::string username = std::getenv("USERPROFILE");
     if(service == ReciverConnect::YoutubeMusic) {
         // ------------------ GETTING REFRESH TOKEN ------------------
@@ -74,12 +73,11 @@ void Reciver::init(ReciverConnect service) {
         curl_easy_cleanup(curl);
 
         if (res == CURLE_OK) {
-            //std::cout << response_string << std::endl;
+            
             auto j = nlohmann::json::parse(response_string);
         
             // if token is here?
             if (j.contains("access_token")) {
-                std::cout << "acessed!" << std::endl;
                 token = j["access_token"];
                 if(reftoken.size() < 3){
                     std::vector<BYTE> crypt = fileRead::encrypt_token(((std::string)j["refresh_token"]));
@@ -96,6 +94,7 @@ void Reciver::init(ReciverConnect service) {
         } 
         else 
         {
+            std::cerr << response_string << std::endl;
             throw Reciver_Error("Failed to perform cURL request.");
         }
     }
@@ -119,7 +118,6 @@ Player Reciver::connect(ReciverConnect service) {
         if(!curl) {
             throw Reciver_Error("Failed to initialize curl.");
         }
-        std::cout << "Token: " << token << std::endl;
         // Readbuffer will store the response from the server, which is the list of playlists of the user.
         std::string readBuffer;
         struct curl_slist* headers = NULL;
@@ -133,6 +131,9 @@ Player Reciver::connect(ReciverConnect service) {
         CURLcode res = curl_easy_perform(curl);
         std::string playlist_id;
         if(res != CURLE_OK) {
+            // CRITICAL: MEMORY LEAK!
+            curl_easy_cleanup(curl);
+            curl_slist_free_all(headers);
             throw Reciver_Error("Failed to connect to Youtube Music.");
         }
         else{
@@ -141,17 +142,19 @@ Player Reciver::connect(ReciverConnect service) {
             auto parsed = nlohmann::json::parse(readBuffer);
             for (const auto& item : parsed["items"]) {
                 if(item["contentDetails"]["relatedPlaylists"]["likes"].get<std::string>().find("LL") != std::string::npos){
-                    std::cout << "Found liked songs playlist!" << std::endl;
+                    //std::cout << "Found liked songs playlist!" << std::endl;
                     playlist_id = item["contentDetails"]["relatedPlaylists"]["likes"];
                 }
             }
         }
         // ----------------------------------------- music list -----------------------------------------
-        std::string token = "";
+
+
+        std::string pgtoken = ""; // now there's no shadowing
         while(true){
             //std::cout << "Response from Music: " << readBuffer << std::endl;
             
-            readBuffer = YT_getSongsList(playlist_id, token);
+            readBuffer = YT_getSongsList(playlist_id, pgtoken);
             if(readBuffer == ""){
                 break;
             }
@@ -186,7 +189,7 @@ Player Reciver::connect(ReciverConnect service) {
                 pl.PushSong(song);
             }
             if(parsed.contains("nextPageToken")){
-                token = parsed["nextPageToken"];
+                pgtoken = parsed["nextPageToken"];
             }
             else{
                 break;
@@ -214,9 +217,9 @@ std::string Reciver::YT_getSongsList(std::string playlist_id, std::string next_p
     std::string url = "https://www.googleapis.com/youtube/v3/playlistItems"
                       "?part=snippet"
                       "&maxResults=50"
-                      "&playlistId=" + playlist_id;
+                      "&playlistId=" "LM";
     if(next_page_token.size() > 3){
-        std::cout << "page token found!" << std::endl;
+        //std::cout << "page token found!" << std::endl;
         url += "&pageToken=" + next_page_token;
     }
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
@@ -237,7 +240,14 @@ std::string Reciver::YT_getSongsList(std::string playlist_id, std::string next_p
 // --------------------------------- class Player method definitions ---------------------------------
 
 Player::Player(){ // js not iinit
-
+    result = FMOD::System_Create(&sys);
+    if(result != FMOD_OK){
+        throw Reciver_Error("Error while creating an system!");
+    }
+    result = sys->init(32, FMOD_INIT_NORMAL, nullptr);
+    if(result != FMOD_OK){
+        throw Reciver_Error("Error while creating an system!");
+    }
 
 }
 
@@ -266,6 +276,47 @@ void Player::Playsong(Information::SongInfo song)
     currentSong = song;
 }
 
+void Player::Play(){
+    if(!isPlaying || playingSong != currentSong){
+        chan->stop();
+        chan->setPaused(false);
+        Playsong();
+        return;
+    }
+    chan->getPaused(&isPaused);
+    chan->setPaused(!isPaused);
+}
+
+void Player::Playsong()
+{
+    std::string ds = GetSongAudio(currentSong);
+    result = sys->createSound(ds.c_str(), FMOD_DEFAULT, nullptr, &snd);
+    std::cout << ds << std::endl;
+    if(result != FMOD_OK){
+        std::cerr << "Failed to play sound: " << result << std::endl;
+        sys->release();
+        throw Reciver_Error("Error while creating an system!");
+    }
+    result = sys->playSound(snd, nullptr, false, &chan);
+    if (result != FMOD_OK) {
+        std::cerr << "Failed to play sound: " << result << std::endl;
+        snd->release();
+        sys->release();
+        return;
+    }
+    playingSong = currentSong;
+    isPlaying = true;
+}
+
+void Player::Update(){
+    if(isPlaying){
+        sys->update();
+        if (chan) {
+            chan->isPlaying(&isPlaying);
+        }
+    }
+}
+
 void Player::Playsong(std::string songName)
 {
     for(const auto& song : all_songs) {
@@ -279,12 +330,29 @@ void Player::Playsong(std::string songName)
 
 void Player::Playsong(int songID)
 {
-    currentSong = all_songs[songID];
+    if (songID >= 0 && songID < all_songs.size()) {
+        currentSong = all_songs[songID];
+    } else {
+        std::cerr << "no such song (id)" << std::endl;
+    }
 }
 
-int Player::GetSongAudio(Information::SongInfo song){
-    if(fileRead::isFileExist("./Downloads/" + song.id + ".mp3")) { std::cout << "that file already exist. SKIP!" << std::endl; return 1; }
+std::string Player::GetSongAudio(Information::SongInfo song){
+    std::string exit = std::string("./Downloads/" + song.id + ".mp3");
+    if(fileRead::isFileExist("./Downloads/" + song.id + ".mp3")) { return exit; }
+    STARTUPINFOA si = { sizeof(si) };
+    PROCESS_INFORMATION pi;
+    std::regex ytRegex("^[a-zA-Z0-9_-]{11}$");
+    if(!std::regex_match(song.id, ytRegex)){
+        return std::string("./no, my dear hackers ;).mp3");
+    }
+
     std::string downloadPath = "./Downloads/%(id)s.%(ext)s";
-    std::string command = "yt-dlp -x --audio-format mp3 -o \"" + downloadPath + "\" https://www.youtube.com/watch?v=" + song.id;
-    return std::system(command.c_str());
+    std::string command = "yt-dlp.exe -x --audio-format mp3 -o \"" + downloadPath + "\" https://www.youtube.com/watch?v=" + song.id;
+    CreateProcessA("yt-dlp.exe", command.data(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi); 
+    WaitForSingleObject(pi.hProcess, INFINITE);
+
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    return exit;
 }

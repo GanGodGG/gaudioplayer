@@ -17,6 +17,8 @@
 #include <ostream>
 #include <gangod/filemgmt.h>
 #include <gangod/server.h>
+#include <FMOD/fmod.hpp>
+#include <regex>
 class Reciver;
 
 
@@ -69,26 +71,42 @@ public:
 
         SongInfo() : thumb({"", 0, 0}){
         }
+
+        bool operator == (SongInfo& other){
+            return id == other.id; 
+        }
+
+        bool operator != (SongInfo& other){
+            return id != other.id; 
+        }
     };
 };
 
 class Player{
 private:
 // current selected playing song
+    bool isPlaying = false;
+    bool isPaused = false;
     Information::SongInfo currentSong;
+    Information::SongInfo playingSong;
     std::vector<Information::SongInfo> all_songs;
+    FMOD::System* sys = nullptr;
+    FMOD::Sound* snd = nullptr;
+    FMOD::Channel* chan = nullptr;
+    FMOD_RESULT result;
 public:
     Information::SongInfo GetCurrentSong();
     // -------------- all songs --------------
     Information::SongInfo GetSongFromList(int index);
     std::vector<Information::SongInfo> ListSongs();
     inline void PushSong(Information::SongInfo song);
-
+    void Playsong();
+    void Play();
     void Playsong(Information::SongInfo song);
     void Playsong(std::string songName);
     void Playsong(int songID);
-
-    int GetSongAudio(Information::SongInfo song);
+    void Update();
+    std::string GetSongAudio(Information::SongInfo song);
 
     Player();
 
@@ -98,12 +116,13 @@ public:
 
         os << "Author \t" << pl.currentSong.author << std::endl;
 
-        os << "Description \t" << pl.currentSong.description << std::endl;
+        os << "------------" << "Description" << "------------" << "\n" << pl.currentSong.description  << std::endl;
 
         os << "Data of creation \t" << pl.currentSong.data << std::endl;
 
         os << "ID \t" << pl.currentSong.id << std::endl;
 
+        os << "urlimg: \t" << pl.currentSong.thumb.url << std::endl;
         return os;
     }
 };

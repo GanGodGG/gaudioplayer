@@ -9,7 +9,7 @@
 
 namespace gserver{
     // Creating a server object
-
+    
 
     static void startServer(std::string& auth_code){
             httplib::Server svr;

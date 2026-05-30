@@ -7,6 +7,9 @@
 #include <iostream>
 #include <string>
 #include <sys/stat.h>
+#include <fstream>
+#include <sstream>
+#include <ostream>
 
 // Reading and checking files
 
