@@ -16,8 +16,10 @@ void Reciver::init(ReciverConnect service) {
     // Here we can add the code to initialize the reciver, but for now, we'll just print a message.
     std::string username = std::getenv("USERPROFILE");
     if(service == ReciverConnect::YoutubeMusic) {
+
         // ------------------ GETTING REFRESH TOKEN ------------------
-        std::string reftoken = fileRead::decrypt_token(fileRead::binOpenFILE(username + "\\Roaming\\GANGOD_ENC\\secret.dat")); // refresh token result
+        std::filesystem::path secretPath = std::filesystem::path(username) / "Roaming" / "GANGOD_ENC" / "secret.dat";
+        std::string reftoken = fileRead::decrypt_token(fileRead::binOpenFILE(secretPath.string())); // refresh token result
          // ------------------ CURL INIT ------------------
         CURL* curl = curl_easy_init();
         // if curl not initialized
@@ -27,7 +29,7 @@ void Reciver::init(ReciverConnect service) {
         }
         std::string post_fields; // post fields
 
-        std::string cliID = fileRead::OpenFILE(".\\PSST.json");
+        std::string cliID = fileRead::OpenFILE(std::filesystem::path("./PSST.json").string());
         auto parsed = nlohmann::json::parse(cliID);
         // ----------------------------------------- CLIENT INFO -----------------------------------------
         std::string client_id = parsed["installed"]["client_id"];
@@ -81,16 +83,15 @@ void Reciver::init(ReciverConnect service) {
                 token = j["access_token"];
                 if(reftoken.size() < 3){
                     std::vector<BYTE> crypt = fileRead::encrypt_token(((std::string)j["refresh_token"]));
-
-                    std::cout << username + "\\Roaming\\GANGOD_ENC\\secret.dat" << std::endl;
-                    fileRead::Createfile(username + "\\Roaming\\GANGOD_ENC", "secret.dat",
-                        reinterpret_cast<char*>(crypt.data()), crypt.size());
+                    fileRead::Createfile(secretPath,
+                    reinterpret_cast<char*>(crypt.data()), crypt.size());
                 }
             } 
             else 
             {
                 throw Reciver_Error("Failed to obtain access token.");
             }
+
         } 
         else 
         {
@@ -199,7 +200,6 @@ Player Reciver::connect(ReciverConnect service) {
         curl_easy_cleanup(curl);
         curl_slist_free_all(headers);
     }
-    pl.Playsong(0);
     return pl;
 }
 
@@ -251,6 +251,15 @@ Player::Player(){ // js not iinit
 
 }
 
+int Player::GetSongIndex(Information::SongInfo song){
+    for(int i = 0; i < all_songs.size(); ++i){
+        if(all_songs[i] == song){
+            return i;
+        }
+    }
+    return -1;
+}
+
 Information::SongInfo Player::GetCurrentSong()
 {
     return currentSong;
@@ -278,43 +287,65 @@ void Player::Playsong(Information::SongInfo song)
 
 void Player::Play(){
     if(!isPlaying || playingSong != currentSong){
-        chan->stop();
-        chan->setPaused(false);
-        Playsong();
+        if(chan){
+            chan->stop();
+            chan->setPaused(false);
+        }
+        AsyncPlaySong(currentSong);
         return;
     }
     chan->getPaused(&isPaused);
     chan->setPaused(!isPaused);
 }
 
-void Player::Playsong()
+void Player::AsyncPlaySong(Information::SongInfo song)
 {
-    std::string ds = GetSongAudio(currentSong);
-    result = sys->createSound(ds.c_str(), FMOD_DEFAULT, nullptr, &snd);
-    std::cout << ds << std::endl;
-    if(result != FMOD_OK){
-        std::cerr << "Failed to play sound: " << result << std::endl;
-        sys->release();
-        throw Reciver_Error("Error while creating an system!");
-    }
-    result = sys->playSound(snd, nullptr, false, &chan);
-    if (result != FMOD_OK) {
-        std::cerr << "Failed to play sound: " << result << std::endl;
-        snd->release();
-        sys->release();
-        return;
-    }
-    playingSong = currentSong;
-    isPlaying = true;
+    if(isDownloading) { return; }
+
+    isDownloading = true;
+
+    std::thread([this, song](){
+        std::string audpth = GetSongAudio(song);
+        this->ds = audpth;
+        this->isReadyToPlay = true;
+    }).detach();
 }
 
 void Player::Update(){
+    if(isReadyToPlay){
+        isReadyToPlay = false;
+        isDownloading = false;
+        result = sys->createSound(ds.c_str(), FMOD_DEFAULT, nullptr, &snd);
+        std::cout << ds << std::endl;
+        if(result != FMOD_OK){
+            std::cerr << "Failed to play sound: " << result << std::endl;
+            sys->release();
+            throw Reciver_Error("Error while creating an system!");
+        }
+        result = sys->playSound(snd, nullptr, false, &chan);
+        if (result != FMOD_OK) {
+            std::cerr << "Failed to play sound: " << result << std::endl;
+            snd->release();
+            sys->release();
+            return;
+        }
+        playingSong = currentSong;
+        isPlaying = true;
+    }
     if(isPlaying){
         sys->update();
         if (chan) {
             chan->isPlaying(&isPlaying);
         }
+        if(!isPlaying){
+            Next();
+        }
     }
+}
+
+void Player::Next(){
+    Playsong(GetSongIndex(currentSong) + 1);
+    Play();
 }
 
 void Player::Playsong(std::string songName)

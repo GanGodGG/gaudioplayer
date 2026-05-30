@@ -244,12 +244,14 @@ class Text : public Object{
 
     void BuildText(SDL_Renderer* rend, std::string text = ""){
         rendptr = rend;
-
         content = text.empty() ? jfile["Text"] : text;
         onReload = [&](){
             std::cout << content << std::endl;
             ChangeText(rendptr, content.c_str());
         };
+        if(tex){
+            SDL_DestroyTexture(tex);
+        }
         if(!fileRead::isFileExist(jfile["FontSource"])) {std::cerr << "no such font. error source: " << jfile["name"] << std::endl; return;}
         TTF_Font *font = TTF_OpenFont(jfile["FontSource"].get<std::string>().c_str(), jfile["FontSize"]);
         SDL_Surface* surf = TTF_RenderText_Blended_Wrapped(font, content.c_str(), 0, Color, jfile["rect"]["width"]);
@@ -258,7 +260,6 @@ class Text : public Object{
             SDL_DestroySurface(surf);
             std::cerr << "Cannot create surface. error source: " << jfile["name"] << std::endl; return;
         }
-        
         tex = SDL_CreateTextureFromSurface(rend, surf);
 
         rect.h = surf->h;
@@ -274,6 +275,28 @@ class Text : public Object{
 
     ~Text(){
         SDL_DestroyTexture(tex);
+    }
+};
+
+class Scroll : public Object{
+    public:
+    float value = 0;
+    Object o1;
+    Object o2;
+    Scroll(const char* name) : Object(name)
+    {
+        o1.Color = {0, 0, 0, 0};
+        o2.Color = {255, 255, 255, 5};
+    }
+
+    void Update(SDL_Renderer* rend) override{
+        value = max(1, value);
+        value = min(0, value);
+        o1.rect = rect;
+        o2.rect = rect;
+        o2.rect.w = o1.rect.w * value;
+        o1.rect.w = o1.rect.w * value;
+        //o2.rect.x = rect.x - o2.rect.w / 2;
     }
 };
 

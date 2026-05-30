@@ -87,6 +87,12 @@ private:
 // current selected playing song
     bool isPlaying = false;
     bool isPaused = false;
+
+    bool isDownloading = false;
+    bool isReadyToPlay = false;
+
+    std::string ds = "";
+
     Information::SongInfo currentSong;
     Information::SongInfo playingSong;
     std::vector<Information::SongInfo> all_songs;
@@ -100,12 +106,15 @@ public:
     Information::SongInfo GetSongFromList(int index);
     std::vector<Information::SongInfo> ListSongs();
     inline void PushSong(Information::SongInfo song);
-    void Playsong();
+    int GetSongIndex(Information::SongInfo song);
     void Play();
+    void AsyncPlaySong(Information::SongInfo song);
     void Playsong(Information::SongInfo song);
     void Playsong(std::string songName);
     void Playsong(int songID);
     void Update();
+
+    void Next();
     std::string GetSongAudio(Information::SongInfo song);
 
     Player();

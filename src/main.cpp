@@ -49,10 +49,21 @@ int main() {
     Button play("play");
     Button next("next");
     Button prev("prev");
+    Scroll scroll("scr1");
     Player p = asyncp.get();
 
     play.onclick = [&p](){
         p.Play();
+    };
+
+    next.onclick = [&p, &img, &wh, &tx](){
+        p.Next();
+        img.gLoadImage(wh.render, 
+                p.GetCurrentSong().thumb.width, 
+                p.GetCurrentSong().thumb.height, 
+                p.GetCurrentSong().thumb.url
+            );
+        tx.ChangeText(p.GetCurrentSong().title.c_str());
     };
 
     UIVerticalArray<Button> bva("bva1", p.ListSongs().size(), true, "but1");
@@ -73,7 +84,6 @@ int main() {
         Text* b = bva2[i];
         b->ChangeText(wh.render, p.ListSongs()[i].title.c_str());
     }
-
     bool debug = true;
     while(running){
         SDL_Event event { 0 };
@@ -106,7 +116,6 @@ int main() {
                 break;
             }
         }
-
 
         // rendering
         SDL_SetRenderDrawColor(wh.render, 38, 38, 38, 255);
